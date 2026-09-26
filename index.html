@@ -19,6 +19,7 @@
     --ink: #23201b;
     --surface: #f4f1e8;
     --surface-line: #d8d2c1;
+    --emergency: #ff3b3b;
   }
   *{ box-sizing:border-box; }
   html,body{ margin:0; padding:0; }
@@ -61,6 +62,12 @@
     opacity:.55;
     pointer-events:none;
   }
+  .screen.emergency{
+    animation: emergency-flash 1s steps(1) infinite;
+  }
+  @keyframes emergency-flash{
+    50%{ box-shadow: inset 0 0 0 1px rgba(255,59,59,.6), inset 0 0 40px rgba(255,59,59,.28); }
+  }
 
   .readout{
     position:relative;
@@ -83,6 +90,14 @@
     color: var(--idle);
     text-shadow: 0 0 5px currentColor, 0 0 12px currentColor;
     opacity:.85;
+  }
+  .readout .emergency-line{
+    display:block;
+    font-size: clamp(15px, 4vw, 19px);
+    color: var(--emergency);
+    text-shadow: 0 0 6px currentColor, 0 0 18px currentColor;
+    margin-bottom: 4px;
+    letter-spacing:.5px;
   }
   .readout .idle-text{
     color: var(--idle);
@@ -122,8 +137,10 @@
     border-bottom:1px solid var(--surface-line);
   }
   .panel-row:last-child{ border-bottom:none; }
+  .panel-row.top-align{ align-items:flex-start; }
   .panel-label{
     font-size:13px; color:#5b5648; width:78px; flex-shrink:0;
+    padding-top:6px;
   }
   .field-group{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; flex:1; }
 
@@ -158,13 +175,15 @@
   .seg button:last-child{ border-right:none; }
   .seg button.active{ background: var(--ink); color:#fff; }
 
+  .chip.active{ background: var(--ink); color:#fff; border-color: var(--ink); }
+
   .hint{ font-size:12px; color:#8a8578; margin-top:4px; width:100%; }
 </style>
 </head>
 <body>
 
   <div class="device">
-    <div class="screen">
+    <div class="screen" id="screen">
       <div class="readout" id="readout">
         <span class="idle-text">SCANNING<span class="cursor"></span></span>
       </div>
@@ -185,6 +204,25 @@
         <button id="applyLoc" type="button">Set</button>
       </div>
       <div class="hint">Scans a 50 mile radius, refreshing every 30 seconds.</div>
+    </div>
+
+    <div class="panel-row top-align">
+      <div class="panel-label">Display</div>
+      <div class="field-group" id="displayToggles">
+        <button type="button" class="chip" data-field="showCallSign">Call sign</button>
+        <button type="button" class="chip" data-field="showFlightNumber">Flight #</button>
+        <button type="button" class="chip" data-field="showRoute">Route</button>
+        <button type="button" class="chip" data-field="showCity">City</button>
+        <button type="button" class="chip" data-field="showType">Aircraft type</button>
+        <button type="button" class="chip" data-field="showRegistration">Registration</button>
+        <button type="button" class="chip" data-field="showAltitude">Altitude</button>
+        <button type="button" class="chip" data-field="showSpeed">Speed</button>
+        <button type="button" class="chip" data-field="showDistance">Distance</button>
+        <button type="button" class="chip" data-field="showTimeToLanding">Time to landing</button>
+        <button type="button" class="chip" data-field="showHeading">Heading</button>
+        <button type="button" class="chip" data-field="showBearing">Bearing</button>
+      </div>
+      <div class="hint">Emergency squawks and military traffic always show, regardless of these.</div>
     </div>
 
     <div class="panel-row">
@@ -221,7 +259,22 @@
   var RADIUS_NM = 50;
   var POLL_MS = 30000;
 
-  var defaults = { lat: null, lon: null, unitAlt: "ft", unitSpeed: "kt", unitDist: "mi" };
+  var defaults = {
+    lat: null, lon: null,
+    unitAlt: "ft", unitSpeed: "kt", unitDist: "mi",
+    showCallSign: true,
+    showFlightNumber: false,
+    showRoute: true,
+    showCity: false,
+    showType: true,
+    showRegistration: false,
+    showAltitude: true,
+    showSpeed: true,
+    showDistance: true,
+    showTimeToLanding: false,
+    showHeading: false,
+    showBearing: false
+  };
   var settings = loadSettings();
 
   function loadSettings(){
@@ -309,14 +362,27 @@
     UPS:{name:"UPS Airlines", color:"#B5763E"}
   };
 
+  // ADS-B emitter category -> plain-English label. Not every code is
+  // commonly seen; unmapped codes just show no label.
+  var CATEGORY_LABELS = {
+    A1:"LIGHT", A2:"SMALL", A3:"LARGE", A4:"HIGH VORTEX LARGE", A5:"HEAVY",
+    A6:"HIGH PERFORMANCE", A7:"ROTORCRAFT",
+    B1:"GLIDER", B2:"LIGHTER THAN AIR", B3:"SKYDIVER", B4:"ULTRALIGHT",
+    B6:"UAV", B7:"SPACE VEHICLE",
+    C1:"EMERGENCY VEHICLE", C2:"SERVICE VEHICLE",
+    C3:"OBSTACLE", C4:"OBSTACLE", C5:"OBSTACLE"
+  };
+
   var routeCache = new Map();
   var lastAircraft = null;
   var lastDistanceKm = null;
+  var lastRouteInfo = null;
   var pollTimer = null;
   var countdownTimer = null;
   var secondsToNext = 0;
 
   var readoutEl = document.getElementById("readout");
+  var screenEl = document.getElementById("screen");
   var statusEl = document.getElementById("statusText");
   var latInput = document.getElementById("latInput");
   var lonInput = document.getElementById("lonInput");
@@ -349,7 +415,18 @@
       if(unit === "speed") settings.unitSpeed = val;
       if(unit === "dist") settings.unitDist = val;
       saveSettings();
-      if(lastAircraft) renderAircraft(lastAircraft, lastDistanceKm);
+      if(lastAircraft) paint();
+    });
+  });
+
+  document.querySelectorAll(".chip").forEach(function(chip){
+    var field = chip.getAttribute("data-field");
+    if(settings[field]) chip.classList.add("active");
+    chip.addEventListener("click", function(){
+      settings[field] = !settings[field];
+      chip.classList.toggle("active", settings[field]);
+      saveSettings();
+      if(lastAircraft) paint();
     });
   });
 
@@ -383,9 +460,31 @@
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   }
 
+  function bearingDeg(lat1, lon1, lat2, lon2){
+    var phi1 = lat1 * Math.PI/180, phi2 = lat2 * Math.PI/180;
+    var dLon = (lon2 - lon1) * Math.PI/180;
+    var y = Math.sin(dLon) * Math.cos(phi2);
+    var x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLon);
+    var theta = Math.atan2(y, x);
+    return (theta * 180/Math.PI + 360) % 360;
+  }
+
+  function compassPoint(deg){
+    var dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+    var idx = Math.round((((deg % 360) + 360) % 360) / 22.5) % 16;
+    return dirs[idx];
+  }
+
   function fmtAlt(ft){
     if(settings.unitAlt === "m") return Math.round(ft * 0.3048).toLocaleString() + "M";
     return Math.round(ft).toLocaleString() + "FT";
+  }
+  function fmtVRate(fpm){
+    if(typeof fpm !== "number" || Math.abs(fpm) < 50) return "";
+    var arrow = fpm > 0 ? "\u2191" : "\u2193";
+    var val = Math.abs(fpm);
+    if(settings.unitAlt === "m") val = val * 0.3048;
+    return arrow + Math.round(val).toLocaleString();
   }
   function fmtSpeed(kt){
     var v = kt;
@@ -398,6 +497,19 @@
     if(settings.unitDist === "km") return km.toFixed(1) + "KM";
     return (km * 0.621371).toFixed(1) + "MI";
   }
+  function fmtTimeToLanding(ac, routeInfo){
+    if(!routeInfo || routeInfo.destLat == null || routeInfo.destLon == null) return null;
+    if(typeof ac.gs !== "number" || ac.gs < 30) return null;
+    if(typeof ac.lat !== "number" || typeof ac.lon !== "number") return null;
+    var remainingKm = distanceKm(ac.lat, ac.lon, routeInfo.destLat, routeInfo.destLon);
+    var remainingNm = remainingKm * 0.539957;
+    var minutes = (remainingNm / ac.gs) * 60;
+    if(!isFinite(minutes) || minutes < 0) return null;
+    if(minutes < 1) return "<1MIN";
+    if(minutes < 60) return Math.round(minutes) + "MIN";
+    var h = Math.floor(minutes/60), m = Math.round(minutes % 60);
+    return h + "H " + m + "M";
+  }
 
   async function lookupRoute(callsign){
     if(routeCache.has(callsign)) return routeCache.get(callsign);
@@ -406,12 +518,23 @@
       if(!res.ok){ routeCache.set(callsign, null); return null; }
       var data = await res.json();
       var fr = data && data.response && data.response.flightroute;
-      if(!fr || !fr.origin || !fr.destination){ routeCache.set(callsign, null); return null; }
-      var o = fr.origin.iata_code || fr.origin.icao_code;
-      var d = fr.destination.iata_code || fr.destination.icao_code;
-      var route = (o && d) ? (o + " \u2192 " + d) : null;
-      routeCache.set(callsign, route);
-      return route;
+      if(!fr){ routeCache.set(callsign, null); return null; }
+
+      var info = { codes: null, cities: null, flightNumber: fr.callsign_iata || null, destLat: null, destLon: null };
+      if(fr.origin && fr.destination){
+        var oCode = fr.origin.iata_code || fr.origin.icao_code;
+        var dCode = fr.destination.iata_code || fr.destination.icao_code;
+        if(oCode && dCode) info.codes = oCode + " \u2192 " + dCode;
+
+        var oCity = fr.origin.municipality;
+        var dCity = fr.destination.municipality;
+        if(oCity && dCity) info.cities = oCity + " \u2192 " + dCity;
+
+        if(typeof fr.destination.latitude === "number") info.destLat = fr.destination.latitude;
+        if(typeof fr.destination.longitude === "number") info.destLon = fr.destination.longitude;
+      }
+      routeCache.set(callsign, info);
+      return info;
     }catch(e){
       routeCache.set(callsign, null);
       return null;
@@ -421,6 +544,22 @@
   async function renderAircraft(ac, distKm){
     lastAircraft = ac;
     lastDistanceKm = distKm;
+    lastRouteInfo = null;
+
+    var rawCallsign = (ac.flight || "").trim();
+    if(rawCallsign){
+      var info = await lookupRoute(rawCallsign);
+      // Guard against a slower flight becoming stale by the time the route
+      // lookup resolves (a newer poll may have already replaced it).
+      if(lastAircraft !== ac) return;
+      lastRouteInfo = info;
+    }
+    paint();
+  }
+
+  function paint(){
+    if(!lastAircraft) return;
+    var ac = lastAircraft, distKm = lastDistanceKm, routeInfo = lastRouteInfo;
 
     var rawCallsign = (ac.flight || "").trim();
     var code = rawCallsign.slice(0,3).toUpperCase();
@@ -428,27 +567,87 @@
     var color = airline ? airline.color : "#B7BDC6";
     var title = airline ? airline.name : (rawCallsign || "UNKNOWN");
 
-    var altText = (ac.alt_baro === "ground") ? "GROUND" : fmtAlt(typeof ac.alt_baro === "number" ? ac.alt_baro : 0);
-    var speedText = typeof ac.gs === "number" ? fmtSpeed(ac.gs) : "\u2014";
-    var distText = fmtDist(distKm);
-    var typeText = ac.t || "";
-    var callsignText = rawCallsign || (ac.r || ac.hex || "").toUpperCase();
+    var squawk = ac.squawk || "";
+    var isEmergency = (ac.emergency && ac.emergency !== "none") ||
+                       squawk === "7500" || squawk === "7600" || squawk === "7700";
+    var isMilitary = typeof ac.dbFlags === "number" && (ac.dbFlags & 1) === 1;
 
-    var routeText = "\u2014";
-    if(rawCallsign) routeText = await lookupRoute(rawCallsign) || "\u2014";
+    var lines = [];
 
-    // Guard against a slower flight becoming stale by the time the route
-    // lookup resolves (a newer poll may have already replaced it).
-    if(lastAircraft !== ac) return;
+    if(isEmergency){
+      var label = squawk === "7500" ? "HIJACK \u2014 SQUAWK 7500" :
+                  squawk === "7600" ? "RADIO FAILURE \u2014 SQUAWK 7600" :
+                  squawk === "7700" ? "EMERGENCY \u2014 SQUAWK 7700" :
+                  "EMERGENCY \u2014 " + String(ac.emergency).toUpperCase();
+      lines.push('<span class="emergency-line">' + escapeHtml(label) + '</span>');
+    }
 
-    readoutEl.innerHTML =
-      '<span class="airline" style="color:' + color + '">' + escapeHtml(title) + '</span>' +
-      '<span class="route-line" style="color:' + color + '">' + escapeHtml(callsignText) + " " + escapeHtml(routeText) + (typeText ? " " + escapeHtml(typeText) : "") + '</span>' +
-      '<span class="detail-line" style="color:' + color + '">' + altText + " " + speedText + " " + distText + '</span>';
+    var headlinePrefix = isMilitary ? '<span style="color:var(--idle)">MIL&nbsp;</span>' : '';
+    lines.push('<span class="airline" style="color:' + color + '">' + headlinePrefix + escapeHtml(title) + '</span>');
+
+    var identityParts = [];
+    if(settings.showCallSign && rawCallsign) identityParts.push(rawCallsign);
+    if(settings.showFlightNumber && routeInfo && routeInfo.flightNumber) identityParts.push(routeInfo.flightNumber);
+    if(identityParts.length){
+      lines.push('<span class="route-line" style="color:' + color + '">' + escapeHtml(identityParts.join(" \u00b7 ")) + '</span>');
+    }
+
+    if(settings.showRoute && routeInfo && routeInfo.codes){
+      lines.push('<span class="route-line">' + escapeHtml(routeInfo.codes) + '</span>');
+    }
+    if(settings.showCity && routeInfo && routeInfo.cities){
+      lines.push('<span class="route-line">' + escapeHtml(routeInfo.cities) + '</span>');
+    }
+
+    var aircraftParts = [];
+    if(settings.showType && ac.t){
+      var catLabel = CATEGORY_LABELS[ac.category] || "";
+      aircraftParts.push(ac.t + (catLabel ? " \u00b7 " + catLabel : ""));
+    }
+    if(settings.showRegistration && ac.r){
+      aircraftParts.push(String(ac.r).toUpperCase());
+    }
+    if(aircraftParts.length){
+      lines.push('<span class="detail-line">' + escapeHtml(aircraftParts.join("   ")) + '</span>');
+    }
+
+    var kinParts = [];
+    if(settings.showAltitude){
+      var altText = (ac.alt_baro === "ground") ? "GROUND" : fmtAlt(typeof ac.alt_baro === "number" ? ac.alt_baro : 0);
+      var vrate = typeof ac.baro_rate === "number" ? ac.baro_rate : (typeof ac.geom_rate === "number" ? ac.geom_rate : null);
+      var vrateText = fmtVRate(vrate);
+      kinParts.push(altText + (vrateText ? " " + vrateText : ""));
+    }
+    if(settings.showSpeed && typeof ac.gs === "number") kinParts.push(fmtSpeed(ac.gs));
+    if(settings.showDistance) kinParts.push(fmtDist(distKm));
+    if(kinParts.length){
+      lines.push('<span class="detail-line">' + escapeHtml(kinParts.join("   ")) + '</span>');
+    }
+
+    var extraParts = [];
+    if(settings.showHeading && typeof ac.track === "number"){
+      extraParts.push("HDG " + Math.round(ac.track) + "\u00b0 " + compassPoint(ac.track));
+    }
+    if(settings.showBearing && typeof ac.lat === "number" && typeof ac.lon === "number"){
+      var brg = bearingDeg(settings.lat, settings.lon, ac.lat, ac.lon);
+      extraParts.push("BRG " + Math.round(brg) + "\u00b0 " + compassPoint(brg));
+    }
+    if(settings.showTimeToLanding){
+      var ttl = fmtTimeToLanding(ac, routeInfo);
+      if(ttl) extraParts.push("ETA " + ttl);
+    }
+    if(extraParts.length){
+      lines.push('<span class="detail-line">' + escapeHtml(extraParts.join("   ")) + '</span>');
+    }
+
+    readoutEl.innerHTML = lines.join("");
+    screenEl.classList.toggle("emergency", isEmergency);
   }
 
   function showNoAircraft(){
     lastAircraft = null;
+    lastRouteInfo = null;
+    screenEl.classList.remove("emergency");
     readoutEl.innerHTML = '<span class="idle-text">NO AIRCRAFT IN RANGE</span>';
   }
 
@@ -484,6 +683,7 @@
 
   async function pollOnce(){
     if(settings.lat == null || settings.lon == null){
+      screenEl.classList.remove("emergency");
       readoutEl.innerHTML = '<span class="idle-text">SCANNING<span class="cursor"></span></span>';
       setStatus("Set a location to start");
       return;
@@ -512,6 +712,7 @@
     }catch(err){
       console.error("NearestPlane: request failed —", err);
       if(!lastAircraft){
+        screenEl.classList.remove("emergency");
         readoutEl.innerHTML = '<span class="idle-text">CONNECTION ERROR<br>' +
           escapeHtml(err && err.message ? err.message : String(err)) + '</span>';
       }
