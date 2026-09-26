@@ -380,6 +380,10 @@
   var pollTimer = null;
   var countdownTimer = null;
   var secondsToNext = 0;
+  var flightList = [];
+  var flightIndex = 0;
+  var showToken = 0;
+  var CAROUSEL_MS = 3000;
 
   var readoutEl = document.getElementById("readout");
   var screenEl = document.getElementById("screen");
@@ -541,20 +545,44 @@
     }
   }
 
-  async function renderAircraft(ac, distKm){
-    lastAircraft = ac;
-    lastDistanceKm = distKm;
+  function showCurrentFlight(){
+    if(!flightList.length){
+      lastAircraft = null;
+      lastRouteInfo = null;
+      screenEl.classList.remove("emergency");
+      readoutEl.innerHTML = '<span class="idle-text">NO AIRCRAFT IN RANGE</span>';
+      return;
+    }
+    if(flightIndex >= flightList.length) flightIndex = 0;
+
+    var entry = flightList[flightIndex];
+    lastAircraft = entry.ac;
+    lastDistanceKm = entry.dist;
     lastRouteInfo = null;
 
-    var rawCallsign = (ac.flight || "").trim();
-    if(rawCallsign){
-      var info = await lookupRoute(rawCallsign);
-      // Guard against a slower flight becoming stale by the time the route
-      // lookup resolves (a newer poll may have already replaced it).
-      if(lastAircraft !== ac) return;
-      lastRouteInfo = info;
-    }
+    var myToken = ++showToken;
+
+    // Paint immediately with what we already know — with only 3 seconds of
+    // dwell time per flight, waiting on the route lookup would eat into it.
     paint();
+
+    var rawCallsign = (entry.ac.flight || "").trim();
+    if(rawCallsign){
+      lookupRoute(rawCallsign).then(function(info){
+        // A newer flight may already be showing by the time this resolves;
+        // drop the result rather than overwrite what's currently on screen.
+        if(myToken !== showToken) return;
+        lastRouteInfo = info;
+        paint();
+      });
+    }
+  }
+
+  function advanceCarousel(){
+    if(flightList.length < 2) return;
+    flightIndex = (flightIndex + 1) % flightList.length;
+    showCurrentFlight();
+    updateCountdown();
   }
 
   function paint(){
@@ -644,13 +672,6 @@
     screenEl.classList.toggle("emergency", isEmergency);
   }
 
-  function showNoAircraft(){
-    lastAircraft = null;
-    lastRouteInfo = null;
-    screenEl.classList.remove("emergency");
-    readoutEl.innerHTML = '<span class="idle-text">NO AIRCRAFT IN RANGE</span>';
-  }
-
   function escapeHtml(s){
     return String(s).replace(/[&<>"']/g, function(c){
       return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c];
@@ -698,14 +719,17 @@
       });
 
       if(!list.length){
-        showNoAircraft();
+        flightList = [];
+        flightIndex = 0;
+        showCurrentFlight();
       }else{
-        var nearest = null, nearestDist = Infinity;
-        for(var i=0;i<list.length;i++){
-          var d = distanceKm(settings.lat, settings.lon, list[i].lat, list[i].lon);
-          if(d < nearestDist){ nearestDist = d; nearest = list[i]; }
-        }
-        await renderAircraft(nearest, nearestDist);
+        var scored = list.map(function(a){
+          return { ac: a, dist: distanceKm(settings.lat, settings.lon, a.lat, a.lon) };
+        });
+        scored.sort(function(a, b){ return a.dist - b.dist; });
+        flightList = scored;
+        flightIndex = 0;
+        showCurrentFlight();
       }
       setStatus("Updated just now");
       scheduleNext(POLL_MS);
@@ -735,7 +759,10 @@
   }
 
   function updateCountdown(){
-    if(secondsToNext > 0) setStatus("Next update in " + secondsToNext + "s");
+    if(secondsToNext > 0){
+      var posText = flightList.length ? ("Flight " + (flightIndex + 1) + " of " + flightList.length + " \u00b7 ") : "";
+      setStatus(posText + "next scan in " + secondsToNext + "s");
+    }
   }
 
   function restartPolling(){
@@ -745,6 +772,7 @@
   }
 
   restartPolling();
+  setInterval(advanceCarousel, CAROUSEL_MS);
 })();
 </script>
 
