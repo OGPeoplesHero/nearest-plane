@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Nearest Plane</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --page-bg: #e7e2d6;
+    --casing: #1c1e22;
+    --casing-edge: #2a2d32;
+    --screen-bg: #050607;
+    --dot: #1b1f23;
+    --dim: #565b62;
+    --idle: #7c828a;
+    --ink: #23201b;
+    --surface: #f4f1e8;
+    --surface-line: #d8d2c1;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    min-height:100vh;
+    background: var(--page-bg);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding: 40px 16px 60px;
+    font-family:'Inter', system-ui, sans-serif;
+    color: var(--ink);
+  }
+
+  .device{
+    width:min(520px, 94vw);
+    background: linear-gradient(180deg, var(--casing-edge), var(--casing));
+    border-radius:20px;
+    padding:20px;
+    box-shadow:
+      0 30px 50px -20px rgba(0,0,0,.45),
+      inset 0 1px 0 rgba(255,255,255,.05),
+      inset 0 -1px 0 rgba(0,0,0,.4);
+  }
+
+  .screen{
+    position:relative;
+    background: var(--screen-bg);
+    border-radius:8px;
+    padding: 34px 24px 28px;
+    min-height: 168px;
+    overflow:hidden;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.03);
+  }
+  .screen::before{
+    content:"";
+    position:absolute; inset:0;
+    background-image: radial-gradient(var(--dot) 1px, transparent 1.4px);
+    background-size: 4px 4px;
+    opacity:.55;
+    pointer-events:none;
+  }
+
+  .readout{
+    position:relative;
+    font-family:'Silkscreen', monospace;
+    line-height:1.5;
+  }
+  .readout .airline{
+    display:block;
+    font-size: clamp(19px, 5.2vw, 27px);
+    letter-spacing: .5px;
+    margin-bottom: 6px;
+    color: var(--idle);
+    text-shadow: 0 0 6px currentColor, 0 0 16px currentColor;
+    word-break: break-word;
+  }
+  .readout .route-line,
+  .readout .detail-line{
+    display:block;
+    font-size: clamp(13px, 3.6vw, 17px);
+    color: var(--idle);
+    text-shadow: 0 0 5px currentColor, 0 0 12px currentColor;
+    opacity:.85;
+  }
+  .readout .idle-text{
+    color: var(--idle);
+    text-shadow: 0 0 4px currentColor;
+    opacity:.7;
+  }
+  .cursor{
+    display:inline-block;
+    width:8px; height:14px;
+    background: var(--idle);
+    margin-left:4px;
+    vertical-align:-2px;
+    animation: blink 1.1s steps(1) infinite;
+  }
+  @keyframes blink{ 50%{ opacity:0; } }
+
+  .power-row{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-top:14px; padding:0 2px;
+  }
+  .power-dot{
+    width:7px; height:7px; border-radius:50%;
+    background:#2e8b57; box-shadow:0 0 6px #2e8b57;
+  }
+  .status-text{
+    font-size:12px; color:#8a8f96; letter-spacing:.2px;
+  }
+
+  .panel{
+    width:min(520px, 94vw);
+    margin-top:22px;
+  }
+  .panel-row{
+    display:flex; flex-wrap:wrap; gap:10px;
+    align-items:center;
+    padding:14px 0;
+    border-bottom:1px solid var(--surface-line);
+  }
+  .panel-row:last-child{ border-bottom:none; }
+  .panel-label{
+    font-size:13px; color:#5b5648; width:78px; flex-shrink:0;
+  }
+  .field-group{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; flex:1; }
+
+  input[type="number"]{
+    width:92px; padding:7px 8px;
+    border:1px solid var(--surface-line);
+    border-radius:6px;
+    background: var(--surface);
+    font-family:'Inter', sans-serif;
+    font-size:13px;
+    color:var(--ink);
+  }
+  button{
+    font-family:'Inter', sans-serif;
+    font-size:13px;
+    padding:7px 12px;
+    border-radius:6px;
+    border:1px solid var(--surface-line);
+    background: var(--surface);
+    color: var(--ink);
+    cursor:pointer;
+  }
+  button:hover{ background:#fff; }
+  button.locate{ font-weight:600; }
+
+  .seg{ display:flex; border:1px solid var(--surface-line); border-radius:6px; overflow:hidden; }
+  .seg button{
+    border:none; border-radius:0;
+    background: var(--surface);
+    border-right:1px solid var(--surface-line);
+  }
+  .seg button:last-child{ border-right:none; }
+  .seg button.active{ background: var(--ink); color:#fff; }
+
+  .hint{ font-size:12px; color:#8a8578; margin-top:4px; width:100%; }
+</style>
+</head>
+<body>
+
+  <div class="device">
+    <div class="screen">
+      <div class="readout" id="readout">
+        <span class="idle-text">SCANNING<span class="cursor"></span></span>
+      </div>
+    </div>
+    <div class="power-row">
+      <div class="power-dot"></div>
+      <div class="status-text" id="statusText">Set a location to start</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-row">
+      <div class="panel-label">Location</div>
+      <div class="field-group">
+        <button class="locate" id="locateBtn" type="button">Use my location</button>
+        <input type="number" id="latInput" step="0.0001" placeholder="lat">
+        <input type="number" id="lonInput" step="0.0001" placeholder="lon">
+        <button id="applyLoc" type="button">Set</button>
+      </div>
+      <div class="hint">Scans a 50 mile radius, refreshing every 30 seconds.</div>
+    </div>
+
+    <div class="panel-row">
+      <div class="panel-label">Altitude</div>
+      <div class="seg" data-unit="alt">
+        <button data-val="ft" class="active">ft</button>
+        <button data-val="m">m</button>
+      </div>
+    </div>
+
+    <div class="panel-row">
+      <div class="panel-label">Speed</div>
+      <div class="seg" data-unit="speed">
+        <button data-val="kt" class="active">kt</button>
+        <button data-val="mph">mph</button>
+        <button data-val="kmh">km/h</button>
+      </div>
+    </div>
+
+    <div class="panel-row">
+      <div class="panel-label">Distance</div>
+      <div class="seg" data-unit="dist">
+        <button data-val="mi" class="active">mi</button>
+        <button data-val="km">km</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  var STORAGE_KEY = "nearestplane_settings_v1";
+  var RADIUS_NM = 50;
+  var POLL_MS = 30000;
+
+  var defaults = { lat: null, lon: null, unitAlt: "ft", unitSpeed: "kt", unitDist: "mi" };
+  var settings = loadSettings();
+
+  function loadSettings(){
+    try{
+      var stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+      var merged = {};
+      for(var k in defaults){ merged[k] = (k in stored) ? stored[k] : defaults[k]; }
+      return merged;
+    }catch(e){
+      return Object.assign({}, defaults);
+    }
+  }
+  function saveSettings(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)); }catch(e){}
+  }
+
+  // Approximate brand colors for common airline ICAO codes. Colors only —
+  // no logos or other trademarked imagery. Unknown callsigns fall back to
+  // a neutral color and show the raw callsign.
+  var AIRLINES = {
+    BAW:{name:"British Airways", color:"#3E9BFF"},
+    VIR:{name:"Virgin Atlantic", color:"#FF3B4E"},
+    EZY:{name:"easyJet", color:"#FF7A1A"},
+    RYR:{name:"Ryanair", color:"#F2C500"},
+    AAL:{name:"American Airlines", color:"#E4172B"},
+    DAL:{name:"Delta Air Lines", color:"#E01933"},
+    UAL:{name:"United Airlines", color:"#4FA8FF"},
+    SWA:{name:"Southwest Airlines", color:"#F9B612"},
+    JBU:{name:"JetBlue", color:"#2E90E0"},
+    ASA:{name:"Alaska Airlines", color:"#3BC4C4"},
+    FFT:{name:"Frontier Airlines", color:"#3FBF5D"},
+    NKS:{name:"Spirit Airlines", color:"#FFE800"},
+    ACA:{name:"Air Canada", color:"#E4172B"},
+    WJA:{name:"WestJet", color:"#8DC63F"},
+    AMX:{name:"Aeromexico", color:"#4F7FE0"},
+    VOI:{name:"Volaris", color:"#8B2E8B"},
+    DLH:{name:"Lufthansa", color:"#FFCC00"},
+    AFR:{name:"Air France", color:"#4F6FE0"},
+    KLM:{name:"KLM", color:"#22B2E0"},
+    IBE:{name:"Iberia", color:"#E0335A"},
+    TAP:{name:"TAP Air Portugal", color:"#2FA65A"},
+    SWR:{name:"Swiss", color:"#E0332B"},
+    AUA:{name:"Austrian Airlines", color:"#E0332B"},
+    BEL:{name:"Brussels Airlines", color:"#3E5CE0"},
+    SAS:{name:"SAS", color:"#3E6BE0"},
+    FIN:{name:"Finnair", color:"#2FA0E0"},
+    EIN:{name:"Aer Lingus", color:"#2FA65A"},
+    LOT:{name:"LOT Polish Airlines", color:"#3E5CE0"},
+    ITY:{name:"ITA Airways", color:"#3E5CE0"},
+    THY:{name:"Turkish Airlines", color:"#E0332B"},
+    UAE:{name:"Emirates", color:"#E0332B"},
+    ETD:{name:"Etihad Airways", color:"#D4AF37"},
+    QTR:{name:"Qatar Airways", color:"#A6192E"},
+    SVA:{name:"Saudia", color:"#2FA65A"},
+    MSR:{name:"EgyptAir", color:"#3E5CE0"},
+    RAM:{name:"Royal Air Maroc", color:"#E0332B"},
+    ETH:{name:"Ethiopian Airlines", color:"#2FA65A"},
+    KQA:{name:"Kenya Airways", color:"#E0332B"},
+    SAA:{name:"South African Airways", color:"#3E5CE0"},
+    SIA:{name:"Singapore Airlines", color:"#F2A900"},
+    CPA:{name:"Cathay Pacific", color:"#2FA65A"},
+    ANA:{name:"All Nippon Airways", color:"#4F7FE0"},
+    JAL:{name:"Japan Airlines", color:"#E0332B"},
+    KAL:{name:"Korean Air", color:"#3E5CE0"},
+    CCA:{name:"Air China", color:"#E0332B"},
+    CSN:{name:"China Southern", color:"#3E5CE0"},
+    CAL:{name:"China Airlines", color:"#E0332B"},
+    MAS:{name:"Malaysia Airlines", color:"#E0332B"},
+    GIA:{name:"Garuda Indonesia", color:"#2FA65A"},
+    PAL:{name:"Philippine Airlines", color:"#3E5CE0"},
+    VJC:{name:"Vietjet Air", color:"#E0332B"},
+    THA:{name:"Thai Airways", color:"#8B5FBF"},
+    AIC:{name:"Air India", color:"#E0662B"},
+    IGO:{name:"IndiGo", color:"#5B5FCF"},
+    QFA:{name:"Qantas", color:"#E0332B"},
+    JST:{name:"Jetstar", color:"#FF7A1A"},
+    ANZ:{name:"Air New Zealand", color:"#2FBFB0"},
+    VOZ:{name:"Virgin Australia", color:"#E0106F"},
+    AVA:{name:"Avianca", color:"#E0332B"},
+    CMP:{name:"Copa Airlines", color:"#3E5CE0"},
+    LAN:{name:"LATAM Airlines", color:"#8B1538"},
+    GLO:{name:"GOL Linhas Aereas", color:"#FF7A1A"},
+    AZU:{name:"Azul Brazilian Airlines", color:"#3E5CE0"},
+    FDX:{name:"FedEx", color:"#8B4FCF"},
+    UPS:{name:"UPS Airlines", color:"#B5763E"}
+  };
+
+  var routeCache = new Map();
+  var lastAircraft = null;
+  var lastDistanceKm = null;
+  var pollTimer = null;
+  var countdownTimer = null;
+  var backoffMs = null;
+  var secondsToNext = 0;
+
+  var readoutEl = document.getElementById("readout");
+  var statusEl = document.getElementById("statusText");
+  var latInput = document.getElementById("latInput");
+  var lonInput = document.getElementById("lonInput");
+
+  if(settings.lat != null) latInput.value = settings.lat;
+  if(settings.lon != null) lonInput.value = settings.lon;
+
+  document.getElementById("locateBtn").addEventListener("click", useMyLocation);
+  document.getElementById("applyLoc").addEventListener("click", function(){
+    var lat = parseFloat(latInput.value);
+    var lon = parseFloat(lonInput.value);
+    if(isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180){
+      setStatus("Enter a valid latitude and longitude.");
+      return;
+    }
+    settings.lat = lat; settings.lon = lon;
+    saveSettings();
+    restartPolling();
+  });
+
+  document.querySelectorAll(".seg").forEach(function(seg){
+    seg.addEventListener("click", function(e){
+      var btn = e.target.closest("button");
+      if(!btn) return;
+      var unit = seg.getAttribute("data-unit");
+      var val = btn.getAttribute("data-val");
+      seg.querySelectorAll("button").forEach(function(b){ b.classList.remove("active"); });
+      btn.classList.add("active");
+      if(unit === "alt") settings.unitAlt = val;
+      if(unit === "speed") settings.unitSpeed = val;
+      if(unit === "dist") settings.unitDist = val;
+      saveSettings();
+      if(lastAircraft) renderAircraft(lastAircraft, lastDistanceKm);
+    });
+  });
+
+  function useMyLocation(){
+    if(!navigator.geolocation){
+      setStatus("Geolocation isn't supported by this browser — enter coordinates.");
+      return;
+    }
+    setStatus("Getting your location…");
+    navigator.geolocation.getCurrentPosition(function(pos){
+      settings.lat = Math.round(pos.coords.latitude * 10000) / 10000;
+      settings.lon = Math.round(pos.coords.longitude * 10000) / 10000;
+      latInput.value = settings.lat;
+      lonInput.value = settings.lon;
+      saveSettings();
+      restartPolling();
+    }, function(){
+      setStatus("Location permission denied — enter coordinates manually.");
+    }, { timeout: 10000 });
+  }
+
+  function setStatus(text){ statusEl.textContent = text; }
+
+  function distanceKm(lat1, lon1, lat2, lon2){
+    var R = 6371;
+    var dLat = (lat2 - lat1) * Math.PI / 180;
+    var dLon = (lon2 - lon1) * Math.PI / 180;
+    var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  function fmtAlt(ft){
+    if(settings.unitAlt === "m") return Math.round(ft * 0.3048).toLocaleString() + "M";
+    return Math.round(ft).toLocaleString() + "FT";
+  }
+  function fmtSpeed(kt){
+    var v = kt;
+    var unit = "KT";
+    if(settings.unitSpeed === "mph"){ v = kt * 1.15078; unit = "MPH"; }
+    else if(settings.unitSpeed === "kmh"){ v = kt * 1.852; unit = "KMH"; }
+    return Math.round(v) + unit;
+  }
+  function fmtDist(km){
+    if(settings.unitDist === "km") return km.toFixed(1) + "KM";
+    return (km * 0.621371).toFixed(1) + "MI";
+  }
+
+  async function lookupRoute(callsign){
+    if(routeCache.has(callsign)) return routeCache.get(callsign);
+    try{
+      var res = await fetch("https://api.adsbdb.com/v0/callsign/" + encodeURIComponent(callsign));
+      if(!res.ok){ routeCache.set(callsign, null); return null; }
+      var data = await res.json();
+      var fr = data && data.response && data.response.flightroute;
+      if(!fr || !fr.origin || !fr.destination){ routeCache.set(callsign, null); return null; }
+      var o = fr.origin.iata_code || fr.origin.icao_code;
+      var d = fr.destination.iata_code || fr.destination.icao_code;
+      var route = (o && d) ? (o + " \u2192 " + d) : null;
+      routeCache.set(callsign, route);
+      return route;
+    }catch(e){
+      routeCache.set(callsign, null);
+      return null;
+    }
+  }
+
+  async function renderAircraft(ac, distKm){
+    lastAircraft = ac;
+    lastDistanceKm = distKm;
+
+    var rawCallsign = (ac.flight || "").trim();
+    var code = rawCallsign.slice(0,3).toUpperCase();
+    var airline = AIRLINES[code];
+    var color = airline ? airline.color : "#B7BDC6";
+    var title = airline ? airline.name : (rawCallsign || "UNKNOWN");
+
+    var altText = (ac.alt_baro === "ground") ? "GROUND" : fmtAlt(typeof ac.alt_baro === "number" ? ac.alt_baro : 0);
+    var speedText = typeof ac.gs === "number" ? fmtSpeed(ac.gs) : "\u2014";
+    var distText = fmtDist(distKm);
+    var typeText = ac.t || "";
+    var callsignText = rawCallsign || (ac.r || ac.hex || "").toUpperCase();
+
+    var routeText = "\u2014";
+    if(rawCallsign) routeText = await lookupRoute(rawCallsign) || "\u2014";
+
+    // Guard against a slower flight becoming stale by the time the route
+    // lookup resolves (a newer poll may have already replaced it).
+    if(lastAircraft !== ac) return;
+
+    readoutEl.innerHTML =
+      '<span class="airline" style="color:' + color + '">' + escapeHtml(title) + '</span>' +
+      '<span class="route-line" style="color:' + color + '">' + escapeHtml(callsignText) + " " + escapeHtml(routeText) + (typeText ? " " + escapeHtml(typeText) : "") + '</span>' +
+      '<span class="detail-line" style="color:' + color + '">' + altText + " " + speedText + " " + distText + '</span>';
+  }
+
+  function showNoAircraft(){
+    lastAircraft = null;
+    readoutEl.innerHTML = '<span class="idle-text">NO AIRCRAFT IN RANGE</span>';
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c];
+    });
+  }
+
+  async function pollOnce(){
+    if(settings.lat == null || settings.lon == null){
+      readoutEl.innerHTML = '<span class="idle-text">SCANNING<span class="cursor"></span></span>';
+      setStatus("Set a location to start");
+      return;
+    }
+    try{
+      var url = "https://api.adsb.lol/v2/point/" + settings.lat + "/" + settings.lon + "/" + RADIUS_NM;
+      var res = await fetch(url);
+      if(res.status === 429){
+        backoffMs = backoffMs ? Math.min(backoffMs * 2, 300000) : 30000;
+        setStatus("Rate limited — retrying in " + Math.round(backoffMs/1000) + "s");
+        scheduleNext(backoffMs);
+        return;
+      }
+      if(!res.ok) throw new Error("status " + res.status);
+      var data = await res.json();
+      backoffMs = null;
+
+      var list = (data.ac || []).filter(function(a){
+        return typeof a.lat === "number" && typeof a.lon === "number";
+      });
+
+      if(!list.length){
+        showNoAircraft();
+      }else{
+        var nearest = null, nearestDist = Infinity;
+        for(var i=0;i<list.length;i++){
+          var d = distanceKm(settings.lat, settings.lon, list[i].lat, list[i].lon);
+          if(d < nearestDist){ nearestDist = d; nearest = list[i]; }
+        }
+        await renderAircraft(nearest, nearestDist);
+      }
+      setStatus("Updated just now");
+      scheduleNext(POLL_MS);
+    }catch(err){
+      console.error("NearestPlane: request failed —", err);
+      if(!lastAircraft){
+        readoutEl.innerHTML = '<span class="idle-text">CONNECTION ERROR<br>' +
+          escapeHtml(err && err.message ? err.message : String(err)) + '</span>';
+      }
+      setStatus("Signal lost — retrying…");
+      scheduleNext(POLL_MS);
+    }
+  }
+
+  function scheduleNext(ms){
+    clearTimeout(pollTimer);
+    clearInterval(countdownTimer);
+    pollTimer = setTimeout(pollOnce, ms);
+    secondsToNext = Math.round(ms/1000);
+    updateCountdown();
+    countdownTimer = setInterval(function(){
+      secondsToNext -= 1;
+      if(secondsToNext <= 0){ clearInterval(countdownTimer); return; }
+      updateCountdown();
+    }, 1000);
+  }
+
+  function updateCountdown(){
+    if(secondsToNext > 0) setStatus("Next update in " + secondsToNext + "s");
+  }
+
+  function restartPolling(){
+    clearTimeout(pollTimer);
+    clearInterval(countdownTimer);
+    pollOnce();
+  }
+
+  restartPolling();
+})();
+</script>
+
+</body>
+</html>
