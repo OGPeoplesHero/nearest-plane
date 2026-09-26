@@ -314,7 +314,6 @@
   var lastDistanceKm = null;
   var pollTimer = null;
   var countdownTimer = null;
-  var backoffMs = null;
   var secondsToNext = 0;
 
   var readoutEl = document.getElementById("readout");
@@ -459,6 +458,30 @@
     });
   }
 
+  // adsb.lol doesn't send CORS headers, so a page-level fetch() gets blocked
+  // even though the API itself is reachable (a plain browser navigation to
+  // the same URL works fine, since CORS only applies to script-driven
+  // requests). Route through a proxy that adds the header, with a second
+  // proxy as fallback, and a direct attempt last in case that ever changes.
+  async function fetchAircraft(targetUrl){
+    var attempts = [
+      "https://corsproxy.io/?url=" + encodeURIComponent(targetUrl),
+      "https://api.allorigins.win/raw?url=" + encodeURIComponent(targetUrl),
+      targetUrl
+    ];
+    var lastErr = null;
+    for(var i=0;i<attempts.length;i++){
+      try{
+        var res = await fetch(attempts[i]);
+        if(res.ok) return res;
+        lastErr = new Error("status " + res.status);
+      }catch(e){
+        lastErr = e;
+      }
+    }
+    throw lastErr || new Error("all fetch attempts failed");
+  }
+
   async function pollOnce(){
     if(settings.lat == null || settings.lon == null){
       readoutEl.innerHTML = '<span class="idle-text">SCANNING<span class="cursor"></span></span>';
@@ -467,16 +490,8 @@
     }
     try{
       var url = "https://api.adsb.lol/v2/point/" + settings.lat + "/" + settings.lon + "/" + RADIUS_NM;
-      var res = await fetch(url);
-      if(res.status === 429){
-        backoffMs = backoffMs ? Math.min(backoffMs * 2, 300000) : 30000;
-        setStatus("Rate limited — retrying in " + Math.round(backoffMs/1000) + "s");
-        scheduleNext(backoffMs);
-        return;
-      }
-      if(!res.ok) throw new Error("status " + res.status);
+      var res = await fetchAircraft(url);
       var data = await res.json();
-      backoffMs = null;
 
       var list = (data.ac || []).filter(function(a){
         return typeof a.lat === "number" && typeof a.lon === "number";
