@@ -685,18 +685,21 @@
   // proxy as fallback, and a direct attempt last in case that ever changes.
   async function fetchAircraft(targetUrl){
     var attempts = [
-      "https://corsproxy.io/?url=" + encodeURIComponent(targetUrl),
-      "https://api.allorigins.win/raw?url=" + encodeURIComponent(targetUrl),
-      targetUrl
+      { label: "corsproxy.io", url: "https://corsproxy.io/?url=" + encodeURIComponent(targetUrl) },
+      { label: "allorigins.win", url: "https://api.allorigins.win/raw?url=" + encodeURIComponent(targetUrl) },
+      { label: "codetabs", url: "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(targetUrl) },
+      { label: "direct", url: targetUrl }
     ];
     var lastErr = null;
     for(var i=0;i<attempts.length;i++){
       try{
-        var res = await fetch(attempts[i]);
+        var res = await fetch(attempts[i].url);
         if(res.ok) return res;
-        lastErr = new Error("status " + res.status);
+        lastErr = new Error(attempts[i].label + " status " + res.status);
+        console.warn("NearestPlane: " + attempts[i].label + " returned status " + res.status);
       }catch(e){
         lastErr = e;
+        console.warn("NearestPlane: " + attempts[i].label + " failed —", e);
       }
     }
     throw lastErr || new Error("all fetch attempts failed");
