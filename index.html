@@ -126,10 +126,109 @@
     font-size:12px; color:#8a8f96; letter-spacing:.2px;
   }
 
-  .panel{
+  /* Secondary "other traffic" split-flap panel */
+  .secondary{
     width:min(520px, 94vw);
-    margin-top:22px;
+    margin-top:16px;
+    background: linear-gradient(180deg, var(--casing-edge), var(--casing));
+    border-radius:16px;
+    padding:14px;
+    box-shadow:
+      0 20px 34px -20px rgba(0,0,0,.4),
+      inset 0 1px 0 rgba(255,255,255,.05);
   }
+  .secondary-inner{
+    position:relative;
+    background: var(--screen-bg);
+    border-radius:6px;
+    padding: 4px 16px;
+    overflow:hidden;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.03);
+  }
+  .secondary-inner::before{
+    content:"";
+    position:absolute; inset:0;
+    background-image: radial-gradient(var(--dot) 1px, transparent 1.4px);
+    background-size: 4px 4px;
+    opacity:.55;
+    pointer-events:none;
+  }
+  .flap-slot{
+    position:relative;
+    height:58px;
+    perspective: 500px;
+    border-bottom: 1px solid rgba(255,255,255,.06);
+  }
+  .flap-slot:last-child{ border-bottom:none; }
+  .flap-face{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; justify-content:center;
+    gap:1px;
+    backface-visibility:hidden;
+    transition: transform .5s cubic-bezier(.45,0,.55,1);
+    background: var(--screen-bg);
+    font-family:'Silkscreen', monospace;
+  }
+  .flap-face.front{ transform: rotateX(0deg); }
+  .flap-face.back{ transform: rotateX(180deg); }
+  .sec-airline{
+    font-size: 13px;
+    letter-spacing:.4px;
+    text-shadow: 0 0 4px currentColor, 0 0 10px currentColor;
+  }
+  .sec-sub{
+    font-size: 11px;
+    color: var(--idle);
+    opacity:.85;
+    text-shadow: 0 0 4px currentColor;
+  }
+
+  .settings-trigger{
+    margin-top:18px;
+    background:none;
+    border:none;
+    color:#5b5648;
+    text-decoration:underline;
+    font-size:13px;
+    font-family:'Inter', sans-serif;
+    padding:6px 4px;
+    cursor:pointer;
+  }
+
+  .sheet-backdrop{
+    position:fixed; inset:0;
+    background: rgba(20,18,14,.45);
+    display:none;
+    align-items:flex-end;
+    justify-content:center;
+    z-index:50;
+  }
+  .sheet-backdrop.open{ display:flex; }
+  .sheet{
+    width:100%;
+    max-width:560px;
+    max-height:85vh;
+    overflow-y:auto;
+    background: var(--surface);
+    border-radius:16px 16px 0 0;
+    padding:10px 20px 28px;
+    transform: translateY(100%);
+    transition: transform .3s ease;
+  }
+  .sheet-backdrop.open .sheet{ transform: translateY(0); }
+  .sheet-header{
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:15px; font-weight:600;
+    padding:10px 0 4px;
+    position:sticky; top:0;
+    background: var(--surface);
+  }
+  .sheet-close{
+    background:none; border:none; font-size:22px; line-height:1;
+    padding:2px 8px; cursor:pointer; color:var(--ink);
+  }
+
+  .panel{ width:100%; }
   .panel-row{
     display:flex; flex-wrap:wrap; gap:10px;
     align-items:center;
@@ -148,7 +247,7 @@
     width:92px; padding:7px 8px;
     border:1px solid var(--surface-line);
     border-radius:6px;
-    background: var(--surface);
+    background: #fff;
     font-family:'Inter', sans-serif;
     font-size:13px;
     color:var(--ink);
@@ -159,17 +258,17 @@
     padding:7px 12px;
     border-radius:6px;
     border:1px solid var(--surface-line);
-    background: var(--surface);
+    background: #fff;
     color: var(--ink);
     cursor:pointer;
   }
-  button:hover{ background:#fff; }
+  button:hover{ background:#fdfdfb; }
   button.locate{ font-weight:600; }
 
   .seg{ display:flex; border:1px solid var(--surface-line); border-radius:6px; overflow:hidden; }
   .seg button{
     border:none; border-radius:0;
-    background: var(--surface);
+    background: #fff;
     border-right:1px solid var(--surface-line);
   }
   .seg button:last-child{ border-right:none; }
@@ -194,59 +293,78 @@
     </div>
   </div>
 
-  <div class="panel">
-    <div class="panel-row">
-      <div class="panel-label">Location</div>
-      <div class="field-group">
-        <button class="locate" id="locateBtn" type="button">Use my location</button>
-        <input type="number" id="latInput" step="0.0001" placeholder="lat">
-        <input type="number" id="lonInput" step="0.0001" placeholder="lon">
-        <button id="applyLoc" type="button">Set</button>
-      </div>
-      <div class="hint">Scans a 50 mile radius, refreshing every 30 seconds.</div>
+  <div class="secondary">
+    <div class="secondary-inner" id="secondaryInner">
+      <div class="flap-slot" data-slot="0"><div class="flap-face front"></div><div class="flap-face back"></div></div>
+      <div class="flap-slot" data-slot="1"><div class="flap-face front"></div><div class="flap-face back"></div></div>
+      <div class="flap-slot" data-slot="2"><div class="flap-face front"></div><div class="flap-face back"></div></div>
+      <div class="flap-slot" data-slot="3"><div class="flap-face front"></div><div class="flap-face back"></div></div>
     </div>
+  </div>
 
-    <div class="panel-row top-align">
-      <div class="panel-label">Display</div>
-      <div class="field-group" id="displayToggles">
-        <button type="button" class="chip" data-field="showCallSign">Call sign</button>
-        <button type="button" class="chip" data-field="showFlightNumber">Flight #</button>
-        <button type="button" class="chip" data-field="showRoute">Route</button>
-        <button type="button" class="chip" data-field="showCity">City</button>
-        <button type="button" class="chip" data-field="showType">Aircraft type</button>
-        <button type="button" class="chip" data-field="showRegistration">Registration</button>
-        <button type="button" class="chip" data-field="showAltitude">Altitude</button>
-        <button type="button" class="chip" data-field="showSpeed">Speed</button>
-        <button type="button" class="chip" data-field="showDistance">Distance</button>
-        <button type="button" class="chip" data-field="showTimeToLanding">Time to landing</button>
-        <button type="button" class="chip" data-field="showHeading">Heading</button>
-        <button type="button" class="chip" data-field="showBearing">Bearing</button>
+  <button type="button" class="settings-trigger" id="settingsTrigger">Settings</button>
+
+  <div class="sheet-backdrop" id="sheetBackdrop">
+    <div class="sheet" id="sheet">
+      <div class="sheet-header">
+        <span>Settings</span>
+        <button type="button" class="sheet-close" id="sheetClose">&times;</button>
       </div>
-      <div class="hint">Emergency squawks and military traffic always show, regardless of these.</div>
-    </div>
+      <div class="panel">
+        <div class="panel-row">
+          <div class="panel-label">Location</div>
+          <div class="field-group">
+            <button class="locate" id="locateBtn" type="button">Use my location</button>
+            <input type="number" id="latInput" step="0.0001" placeholder="lat">
+            <input type="number" id="lonInput" step="0.0001" placeholder="lon">
+            <button id="applyLoc" type="button">Set</button>
+          </div>
+          <div class="hint">Scans a 50 mile radius, refreshing every 30 seconds.</div>
+        </div>
 
-    <div class="panel-row">
-      <div class="panel-label">Altitude</div>
-      <div class="seg" data-unit="alt">
-        <button data-val="ft" class="active">ft</button>
-        <button data-val="m">m</button>
-      </div>
-    </div>
+        <div class="panel-row top-align">
+          <div class="panel-label">Display</div>
+          <div class="field-group" id="displayToggles">
+            <button type="button" class="chip" data-field="showCallSign">Call sign</button>
+            <button type="button" class="chip" data-field="showFlightNumber">Flight #</button>
+            <button type="button" class="chip" data-field="showRoute">Route</button>
+            <button type="button" class="chip" data-field="showCity">City</button>
+            <button type="button" class="chip" data-field="showType">Aircraft type</button>
+            <button type="button" class="chip" data-field="showRegistration">Registration</button>
+            <button type="button" class="chip" data-field="showAltitude">Altitude</button>
+            <button type="button" class="chip" data-field="showSpeed">Speed</button>
+            <button type="button" class="chip" data-field="showDistance">Distance</button>
+            <button type="button" class="chip" data-field="showTimeToLanding">Time to landing</button>
+            <button type="button" class="chip" data-field="showHeading">Heading</button>
+            <button type="button" class="chip" data-field="showBearing">Bearing</button>
+          </div>
+          <div class="hint">Emergency squawks and military traffic always show, regardless of these. Applies to the main display only — the list below always shows airline, flight number and route.</div>
+        </div>
 
-    <div class="panel-row">
-      <div class="panel-label">Speed</div>
-      <div class="seg" data-unit="speed">
-        <button data-val="kt" class="active">kt</button>
-        <button data-val="mph">mph</button>
-        <button data-val="kmh">km/h</button>
-      </div>
-    </div>
+        <div class="panel-row">
+          <div class="panel-label">Altitude</div>
+          <div class="seg" data-unit="alt">
+            <button data-val="ft" class="active">ft</button>
+            <button data-val="m">m</button>
+          </div>
+        </div>
 
-    <div class="panel-row">
-      <div class="panel-label">Distance</div>
-      <div class="seg" data-unit="dist">
-        <button data-val="mi" class="active">mi</button>
-        <button data-val="km">km</button>
+        <div class="panel-row">
+          <div class="panel-label">Speed</div>
+          <div class="seg" data-unit="speed">
+            <button data-val="kt" class="active">kt</button>
+            <button data-val="mph">mph</button>
+            <button data-val="kmh">km/h</button>
+          </div>
+        </div>
+
+        <div class="panel-row">
+          <div class="panel-label">Distance</div>
+          <div class="seg" data-unit="dist">
+            <button data-val="mi" class="active">mi</button>
+            <button data-val="km">km</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -258,6 +376,7 @@
   var STORAGE_KEY = "nearestplane_settings_v1";
   var RADIUS_NM = 50;
   var POLL_MS = 30000;
+  var SECONDARY_PAGE_MS = 5000;
 
   var defaults = {
     lat: null, lon: null,
@@ -380,16 +499,35 @@
   var pollTimer = null;
   var countdownTimer = null;
   var secondsToNext = 0;
-  var flightList = [];
-  var flightIndex = 0;
   var showToken = 0;
-  var CAROUSEL_MS = 5000;
+
+  var flightList = [];          // everyone found this scan, nearest first
+  var secondaryList = [];       // flightList minus the nearest (main display)
+  var secondaryPage = 0;
+  var secondaryRotations = [[0,180],[0,180],[0,180],[0,180]];
+  var secondaryFaceEls = [];
 
   var readoutEl = document.getElementById("readout");
   var screenEl = document.getElementById("screen");
   var statusEl = document.getElementById("statusText");
   var latInput = document.getElementById("latInput");
   var lonInput = document.getElementById("lonInput");
+
+  document.querySelectorAll(".flap-slot").forEach(function(slot, idx){
+    secondaryFaceEls[idx] = {
+      a: slot.querySelector(".flap-face.front"),
+      b: slot.querySelector(".flap-face.back")
+    };
+  });
+
+  var settingsTrigger = document.getElementById("settingsTrigger");
+  var sheetBackdrop = document.getElementById("sheetBackdrop");
+  var sheetClose = document.getElementById("sheetClose");
+  settingsTrigger.addEventListener("click", function(){ sheetBackdrop.classList.add("open"); });
+  sheetClose.addEventListener("click", function(){ sheetBackdrop.classList.remove("open"); });
+  sheetBackdrop.addEventListener("click", function(e){
+    if(e.target === sheetBackdrop) sheetBackdrop.classList.remove("open");
+  });
 
   if(settings.lat != null) latInput.value = settings.lat;
   if(settings.lon != null) lonInput.value = settings.lon;
@@ -545,7 +683,9 @@
     }
   }
 
-  function showCurrentFlight(){
+  // ---- Main display: always the single nearest aircraft from the last scan ----
+
+  function showNearest(){
     if(!flightList.length){
       lastAircraft = null;
       lastRouteInfo = null;
@@ -553,36 +693,22 @@
       readoutEl.innerHTML = '<span class="idle-text">NO AIRCRAFT IN RANGE</span>';
       return;
     }
-    if(flightIndex >= flightList.length) flightIndex = 0;
-
-    var entry = flightList[flightIndex];
+    var entry = flightList[0];
     lastAircraft = entry.ac;
     lastDistanceKm = entry.dist;
     lastRouteInfo = null;
 
     var myToken = ++showToken;
-
-    // Paint immediately with what we already know — with only 3 seconds of
-    // dwell time per flight, waiting on the route lookup would eat into it.
     paint();
 
     var rawCallsign = (entry.ac.flight || "").trim();
     if(rawCallsign){
       lookupRoute(rawCallsign).then(function(info){
-        // A newer flight may already be showing by the time this resolves;
-        // drop the result rather than overwrite what's currently on screen.
         if(myToken !== showToken) return;
         lastRouteInfo = info;
         paint();
       });
     }
-  }
-
-  function advanceCarousel(){
-    if(flightList.length < 2) return;
-    flightIndex = (flightIndex + 1) % flightList.length;
-    showCurrentFlight();
-    updateCountdown();
   }
 
   function paint(){
@@ -672,6 +798,84 @@
     screenEl.classList.toggle("emergency", isEmergency);
   }
 
+  // ---- Secondary display: everyone else, 4 at a time, split-flap paging ----
+
+  function computeSecondaryList(){
+    secondaryList = flightList.slice(1);
+    secondaryPage = 0;
+  }
+
+  function secondaryPageCount(){
+    return Math.max(1, Math.ceil(secondaryList.length / 4));
+  }
+
+  function buildSlotHtml(entry){
+    if(!entry){
+      return '<span class="sec-sub" style="opacity:.45;text-align:center;">\u2014 no further traffic \u2014</span>';
+    }
+    var ac = entry.ac;
+    var rawCallsign = (ac.flight || "").trim();
+    var code = rawCallsign.slice(0,3).toUpperCase();
+    var airline = AIRLINES[code];
+    var color = airline ? airline.color : "#B7BDC6";
+    var title = airline ? airline.name : (rawCallsign || "UNKNOWN");
+    var cached = rawCallsign ? routeCache.get(rawCallsign) : undefined;
+    var flightNumber = (cached && cached.flightNumber) ? cached.flightNumber : (rawCallsign || "\u2014");
+    var route = (cached && cached.codes) ? cached.codes : "\u2014";
+    return '<span class="sec-airline" style="color:' + color + '">' + escapeHtml(title) + '</span>' +
+           '<span class="sec-sub">' + escapeHtml(flightNumber) + '</span>' +
+           '<span class="sec-sub">' + escapeHtml(route) + '</span>';
+  }
+
+  function setSlotContent(i, html, animate){
+    var faces = secondaryFaceEls[i];
+    var rot = secondaryRotations[i];
+    var hiddenIsA = ((((rot[0] % 360) + 360) % 360) === 180);
+    var hiddenEl = hiddenIsA ? faces.a : faces.b;
+    hiddenEl.innerHTML = html;
+
+    if(animate){
+      rot[0] += 180;
+      rot[1] += 180;
+      faces.a.style.transform = "rotateX(" + rot[0] + "deg)";
+      faces.b.style.transform = "rotateX(" + rot[1] + "deg)";
+    }else{
+      var visibleEl = hiddenIsA ? faces.b : faces.a;
+      visibleEl.innerHTML = html;
+    }
+  }
+
+  function renderSecondaryPage(animate){
+    var start = secondaryPage * 4;
+    for(var i=0;i<4;i++){
+      (function(slotIndex){
+        var entry = secondaryList[start + slotIndex] || null;
+        setSlotContent(slotIndex, buildSlotHtml(entry), animate);
+
+        if(entry){
+          var rawCallsign = (entry.ac.flight || "").trim();
+          if(rawCallsign && !routeCache.has(rawCallsign)){
+            lookupRoute(rawCallsign).then(function(){
+              // Only repaint if this slot is still showing this same entry —
+              // the page may have moved on by the time the lookup resolves.
+              if(secondaryList[secondaryPage * 4 + slotIndex] === entry){
+                setSlotContent(slotIndex, buildSlotHtml(entry), false);
+              }
+            });
+          }
+        }
+      })(i);
+    }
+  }
+
+  function advanceSecondaryPage(){
+    var pageCount = secondaryPageCount();
+    if(secondaryList.length === 0 || pageCount <= 1) return;
+    secondaryPage = (secondaryPage + 1) % pageCount;
+    renderSecondaryPage(true);
+    updateCountdown();
+  }
+
   function escapeHtml(s){
     return String(s).replace(/[&<>"']/g, function(c){
       return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c];
@@ -681,8 +885,8 @@
   // adsb.lol doesn't send CORS headers, so a page-level fetch() gets blocked
   // even though the API itself is reachable (a plain browser navigation to
   // the same URL works fine, since CORS only applies to script-driven
-  // requests). Route through a proxy that adds the header, with a second
-  // proxy as fallback, and a direct attempt last in case that ever changes.
+  // requests). Route through a proxy that adds the header, with two more
+  // proxies as fallback, and a direct attempt last in case that ever changes.
   async function fetchAircraft(targetUrl){
     var attempts = [
       { label: "corsproxy.io", url: "https://corsproxy.io/?url=" + encodeURIComponent(targetUrl) },
@@ -723,17 +927,17 @@
 
       if(!list.length){
         flightList = [];
-        flightIndex = 0;
-        showCurrentFlight();
       }else{
         var scored = list.map(function(a){
           return { ac: a, dist: distanceKm(settings.lat, settings.lon, a.lat, a.lon) };
         });
         scored.sort(function(a, b){ return a.dist - b.dist; });
         flightList = scored;
-        flightIndex = 0;
-        showCurrentFlight();
       }
+      showNearest();
+      computeSecondaryList();
+      renderSecondaryPage(false);
+
       setStatus("Updated just now");
       scheduleNext(POLL_MS);
     }catch(err){
@@ -763,7 +967,9 @@
 
   function updateCountdown(){
     if(secondsToNext > 0){
-      var posText = flightList.length ? ("Flight " + (flightIndex + 1) + " of " + flightList.length + " \u00b7 ") : "";
+      var pageCount = secondaryPageCount();
+      var posText = (secondaryList.length && pageCount > 1) ?
+        ("Page " + (secondaryPage + 1) + " of " + pageCount + " \u00b7 ") : "";
       setStatus(posText + "next scan in " + secondsToNext + "s");
     }
   }
@@ -775,7 +981,7 @@
   }
 
   restartPolling();
-  setInterval(advanceCarousel, CAROUSEL_MS);
+  setInterval(advanceSecondaryPage, SECONDARY_PAGE_MS);
 })();
 </script>
 
