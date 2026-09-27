@@ -125,6 +125,10 @@
   .status-text{
     font-size:12px; color:#8a8f96; letter-spacing:.2px;
   }
+  .secondary-caption{
+    font-size:12px; color:#8a8f96; letter-spacing:.2px;
+    margin-top:10px; padding:0 2px;
+  }
 
   /* Secondary "other traffic" split-flap panel */
   .secondary{
@@ -300,6 +304,7 @@
       <div class="flap-slot" data-slot="2"><div class="flap-face front"></div><div class="flap-face back"></div></div>
       <div class="flap-slot" data-slot="3"><div class="flap-face front"></div><div class="flap-face back"></div></div>
     </div>
+    <div class="secondary-caption" id="secondaryCaption"></div>
   </div>
 
   <button type="button" class="settings-trigger" id="settingsTrigger">Settings</button>
@@ -319,7 +324,7 @@
             <input type="number" id="lonInput" step="0.0001" placeholder="lon">
             <button id="applyLoc" type="button">Set</button>
           </div>
-          <div class="hint">Scans a 50 mile radius, refreshing every 30 seconds.</div>
+          <div class="hint" id="radiusHint">Scans a 50 mile radius, refreshing every 30 seconds.</div>
         </div>
 
         <div class="panel-row top-align">
@@ -512,6 +517,8 @@
   var statusEl = document.getElementById("statusText");
   var latInput = document.getElementById("latInput");
   var lonInput = document.getElementById("lonInput");
+  var secondaryCaptionEl = document.getElementById("secondaryCaption");
+  var radiusHintEl = document.getElementById("radiusHint");
 
   document.querySelectorAll(".flap-slot").forEach(function(slot, idx){
     secondaryFaceEls[idx] = {
@@ -557,6 +564,8 @@
       if(unit === "speed") settings.unitSpeed = val;
       if(unit === "dist") settings.unitDist = val;
       saveSettings();
+      updateRadiusHint();
+      updateSecondaryCaption();
       if(lastAircraft) paint();
     });
   });
@@ -638,6 +647,31 @@
   function fmtDist(km){
     if(settings.unitDist === "km") return km.toFixed(1) + "KM";
     return (km * 0.621371).toFixed(1) + "MI";
+  }
+  function fmtRadiusText(){
+    // RADIUS_NM is nautical miles (what the API takes); convert to whatever
+    // distance unit is currently selected so this always matches reality.
+    if(settings.unitDist === "km") return Math.round(RADIUS_NM * 1.852) + " km";
+    return Math.round(RADIUS_NM * 1.15078) + " miles";
+  }
+  function updateRadiusHint(){
+    radiusHintEl.textContent = "Scans a " + fmtRadiusText() + " radius, refreshing every 30 seconds.";
+  }
+  function updateSecondaryCaption(){
+    var total = flightList.length;
+    if(total === 0){
+      secondaryCaptionEl.textContent = "No aircraft within " + fmtRadiusText() + ".";
+      return;
+    }
+    if(secondaryList.length === 0){
+      secondaryCaptionEl.textContent = "Only 1 aircraft within " + fmtRadiusText() + ".";
+      return;
+    }
+    var start = secondaryPage * 4;
+    var count = Math.min(4, secondaryList.length - start);
+    var rankStart = start + 2;
+    var rankEnd = start + count + 1;
+    secondaryCaptionEl.textContent = rankStart + "\u2013" + rankEnd + " of " + total + " aircraft within " + fmtRadiusText() + ".";
   }
   function fmtTimeToLanding(ac, routeInfo){
     if(!routeInfo || routeInfo.destLat == null || routeInfo.destLon == null) return null;
@@ -873,6 +907,7 @@
     if(secondaryList.length === 0 || pageCount <= 1) return;
     secondaryPage = (secondaryPage + 1) % pageCount;
     renderSecondaryPage(true);
+    updateSecondaryCaption();
     updateCountdown();
   }
 
@@ -937,6 +972,7 @@
       showNearest();
       computeSecondaryList();
       renderSecondaryPage(false);
+      updateSecondaryCaption();
 
       setStatus("Updated just now");
       scheduleNext(POLL_MS);
@@ -981,6 +1017,8 @@
   }
 
   restartPolling();
+  updateRadiusHint();
+  updateSecondaryCaption();
   setInterval(advanceSecondaryPage, SECONDARY_PAGE_MS);
 })();
 </script>
